@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Coto de Caza</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/togeojson@0.16.0/togeojson.js"></script>
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    .locate-button, .reset-button, .reset-route-button, .start-route-button, .export-route-button {
+      position: absolute;
+      bottom: 10px;
+      z-index: 1000;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+      font-family: sans-serif;
+    }
+    /* Botón de localización en la esquina inferior izquierda */
+    .locate-button {
+      left: 10px;
+    }
+    /* Botón de reset en la esquina inferior derecha */
+    .reset-button {
+      right: 10px;
+    }
+    /* Botón para borrar la ruta */
+    .reset-route-button {
+      left: 10px;
+      bottom: 50px; /* Justo encima del botón de zoom */
+    }
+    /* Botón para activar/desactivar la grabación de ruta */
+    .start-route-button {
+      left: 10px;
+      bottom: 90px; /* Justo encima del botón de borrar la ruta */
+    }
+    /* Botón para exportar la ruta */
+    .export-route-button {
+      left: 10px;
+      bottom: 130px; /* Justo encima del botón de "Iniciar ruta" */
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Inicializa el mapa con una vista predeterminada
+    const map = L.map('map').setView([42.1400, -3.4389], 12);  // Inicialmente en un punto genérico
+
+    // Capas base
+    const ignLayer = L.tileLayer.wms("https://www.ign.es/wms-inspire/mapa-raster", {
+      layers: "mtn_rasterizado",
+      format: "image/png",
+      transparent: false,
+      attribution: "© Instituto Geográfico Nacional"
+    });
+
+    const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors, © OpenTopoMap',
+      maxZoom: 17
+    });
+
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '© Esri, Maxar, Earthstar Geographics',
+      maxZoom: 19
+    });
+
+    ignLayer.addTo(map);
+
+    const baseLayers = {
+      "WMS IGN": ignLayer,
+      "Topográfico": topoLayer,
+      "Satélite": satelliteLayer
+    };
+    L.control.layers(baseLayers).addTo(map);
+
+    // Variables para marcador de usuario
+    let userMarker, accuracyCircle;
+    let locationActive = false;
+    let cotoBounds;  // Guardamos los límites de la parcela
+    let route = []; // Array para almacenar las coordenadas de la ruta
+    let routeLine;   // Variable para la línea de la ruta
+    let routeActive = false; // Estado para saber si estamos grabando la ruta
+
+    // Cargar GeoJSON del coto
+    fetch("CotoWGS84.json")
+      .then(response => response.json())
+      .then(data => {
+        const coto = L.geoJSON(data, {
+          style: {
+            color: "red",
+            weight: 2,
+            fillOpacity: 0.1
+          }
+        }).addTo(map);
+
+        // Obtener los límites de la parcela y centrar el mapa en ellos
+        cotoBounds = coto.getBounds();
+        map.fitBounds(cotoBounds);  // Centra el mapa en los límites de la parcela
+      });
+
+    // Función para activar/desactivar la localización
+    function toggleLocation() {
+      if (locationActive) {
+        // Desactivar la localización
+        map.stopLocate();
+        if (userMarker) {
+          userMarker.remove();
+          accuracyCircle.remove();
+        }
+        locationActive = false;
+        document.getElementById('location-button').innerText = '📍 Activar ubicación';
+      } else {
+        // Activar la localización
+        locationActive = true;
+        map.locate({ setView: true, watch: true, maxZoom: 16 });
+
+        map.on('locationfound', e => {
+          // Si no estamos grabando ruta, actualizamos solo el marcador
+          if (!routeActive) {
+            if (userMarker) {
+              userMarker.setLatLng(e.latlng); // Si ya existe el marcador, lo movemos
+            } else {
+              userMarker = L.marker(e.latlng).addTo(map)
+                .bindPopup("¡Estás aquí!").openPopup();
+            }
+
+            // Añadir un círculo de precisión (opcional)
+            if (accuracyCircle) {
+              accuracyCircle.setLatLng(e.latlng).setRadius(e.accuracy);
+            } else {
+              accuracyCircle = L.circle(e.latlng, e.accuracy, {
+                color: 'blue',
+                fillColor: '#3f87ff',
+                fillOpacity: 0.2
+              }).addTo(map);
+            }
+          }
+        });
+
+        map.on('locationerror', e => {
+          alert("No se pudo obtener tu ubicación: " + e.message);
+        });
+
+        document.getElementById('location-button').innerText = '📍 Desactivar ubicación';
+      }
+    }
+
+    // Función para activar/desactivar la grabación de la ruta
+    function toggleRoute() {
+      if (routeActive) {
+        // Detener la grabación de la ruta
+        routeActive = false;
+        document.getElementById('start-route-button').innerText = '🎬 Iniciar ruta';
+
+        // Eliminar la línea de la ruta si ya existía
+        if (routeLine) {
+          routeLine.remove();
+        }
+      } else {
+        // Iniciar la grabación de la ruta
+        routeActive = true;
+        document.getElementById('start-route-button').innerText = '❌ Detener ruta';
+
+        // Empezar a grabar la ruta
+        map.on('locationfound', e => {
+          // Si estamos grabando la ruta, agregamos las coordenadas
+          if (routeActive) {
+            route.push(e.latlng);
+
+            // Si ya existe una ruta, actualizamos la línea
+            if (routeLine) {
+              routeLine.setLatLngs(route);
+            } else {
+              routeLine = L.polyline(route, { color: 'blue' }).addTo(map);
+            }
+          }
+        });
+      }
+    }
+
+    // Función para exportar la ruta a KML
+    function exportRoute() {
+      if (route.length > 0) {
+        const geoJsonRoute = {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: route.map(latlng => [latlng.lng, latlng.lat]) // Convertir latlng a [lng, lat] para KML
+            },
+            properties: {}
+          }]
+        };
+
+        const kml = toGeoJSON.kml(geoJsonRoute);  // Convertir GeoJSON a KML
+        const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'ruta.kml'; // Nombre del archivo KML
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        alert("No hay ruta para exportar.");
+      }
+    }
+
+    // Función para volver al centro y zoom inicial de la parcela
+    function resetZoom() {
+      if (cotoBounds) {
+        map.fitBounds(cotoBounds);  // Vuelve a los límites de la parcela
+      } else {
+        alert("No se pudo encontrar los límites de la parcela.");
+      }
+    }
+
+    // Función para borrar la ruta
+    function resetRoute() {
+      route = []; // Vaciar el array de la ruta
+      if (routeLine) {
+        map.removeLayer(routeLine); // Eliminar la línea del mapa
+      }
+      routeLine = null; // Resetear la variable de la línea
+    }
+  </script>
+
+  <!-- Botón para activar/desactivar localización -->
+  <button id="location-button" class="locate-button" onclick="toggleLocation()">📍 Activar ubicación</button>
+
+  <!-- Botón para restablecer el zoom a la parcela -->
+  <button class="reset-button" onclick="resetZoom()">🔄 Volver al zoom de la parcela</button>
+
+  <!-- Botón para borrar la ruta -->
+  <button class="reset-route-button" onclick="resetRoute()">🗑 Borrar ruta</button>
+
+  <!-- Botón para activar/desactivar la grabación de la ruta -->
+  <button id="start-route-button" class="start-route-button" onclick="toggleRoute()">🎬 Iniciar ruta</button>
+
+  <!-- Botón para exportar la ruta como KML -->
+  <button class="export-route-button" onclick="exportRoute()">💾 Exportar ruta</button>
+
+</body>
+</html>
