@@ -26,11 +26,11 @@
     }
     /* Botón de localización en la esquina inferior izquierda */
     .locate-button {
-      left: 10px;
+      right: 10px;
     }
     /* Botón de reset en la esquina inferior derecha */
     .reset-button {
-      right: 10px;
+      right: 50px;
     }
     /* Botón para borrar la ruta */
     .reset-route-button {
@@ -40,12 +40,12 @@
     /* Botón para activar/desactivar la grabación de ruta */
     .start-route-button {
       left: 10px;
-      bottom: 90px; /* Justo encima del botón de borrar la ruta */
+      bottom: 10px; /* Justo encima del botón de borrar la ruta */
     }
     /* Botón para exportar la ruta */
     .export-route-button {
       left: 10px;
-      bottom: 130px; /* Justo encima del botón de "Iniciar ruta" */
+      bottom: 90px; /* Justo encima del botón de "Iniciar ruta" */
     }
   </style>
 </head>
@@ -242,7 +242,7 @@
   <button id="location-button" class="locate-button" onclick="toggleLocation()">📍 Activar ubicación</button>
 
   <!-- Botón para restablecer el zoom a la parcela -->
-  <button class="reset-button" onclick="resetZoom()">🔄 Volver al zoom de la parcela</button>
+  <button class="reset-button" onclick="resetZoom()">🔄 Volver al zoom del coto</button>
 
   <!-- Botón para borrar la ruta -->
   <button class="reset-route-button" onclick="resetRoute()">🗑 Borrar ruta</button>
