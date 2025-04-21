@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Coto de Caza</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    .locate-button, .reset-button {
+      position: absolute;
+      bottom: 10px;
+      z-index: 1000;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+      font-family: sans-serif;
+    }
+    .reset-button {
+      left: 120px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Inicializa el mapa con una vista predeterminada
+    const map = L.map('map').setView([42.1400, -3.4389], 12);  // Inicialmente en un punto genérico
+
+    // Capas base
+    const ignLayer = L.tileLayer.wms("https://www.ign.es/wms-inspire/mapa-raster", {
+      layers: "mtn_rasterizado",
+      format: "image/png",
+      transparent: false,
+      attribution: "© Instituto Geográfico Nacional"
+    });
+
+    const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors, © OpenTopoMap',
+      maxZoom: 17
+    });
+
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '© Esri, Maxar, Earthstar Geographics',
+      maxZoom: 19
+    });
+
+    ignLayer.addTo(map);
+
+    const baseLayers = {
+      "WMS IGN": ignLayer,
+      "Topográfico": topoLayer,
+      "Satélite": satelliteLayer
+    };
+    L.control.layers(baseLayers).addTo(map);
+
+    // Variables para marcador de usuario
+    let userMarker, accuracyCircle;
+    let locationActive = false;
+    let cotoBounds;  // Guardamos los límites de la parcela
+
+    // Cargar GeoJSON del coto
+    fetch("CotoWGS84.json")
+      .then(response => response.json())
+      .then(data => {
+        const coto = L.geoJSON(data, {
+          style: {
+            color: "red",
+            weight: 2,
+            fillOpacity: 0.1
+          }
+        }).addTo(map);
+
+        // Obtener los límites de la parcela y centrar el mapa en ellos
+        cotoBounds = coto.getBounds();
+        map.fitBounds(cotoBounds);  // Centra el mapa en los límites de la parcela
+      });
+
+    // Función para activar/desactivar la localización
+    function toggleLocation() {
+      if (locationActive) {
+        // Desactivar la localización
+        map.stopLocate();
+        if (userMarker) {
+          userMarker.remove();
+          accuracyCircle.remove();
+        }
+        locationActive = false;
+        document.getElementById('location-button').innerText = '📍 Activar ubicación';
+      } else {
+        // Activar la localización
+        locationActive = true;
+        map.locate({ setView: true, watch: true, maxZoom: 16 });
+
+        map.on('locationfound', e => {
+          if (userMarker) {
+            userMarker.setLatLng(e.latlng);
+            accuracyCircle.setLatLng(e.latlng).setRadius(e.accuracy);
+          } else {
+            userMarker = L.marker(e.latlng).addTo(map)
+              .bindPopup("¡Estás aquí!").openPopup();
+
+            accuracyCircle = L.circle(e.latlng, e.accuracy, {
+              color: 'blue',
+              fillColor: '#3f87ff',
+              fillOpacity: 0.2
+            }).addTo(map);
+          }
+        });
+
+        map.on('locationerror', e => {
+          alert("No se pudo obtener tu ubicación: " + e.message);
+        });
+
+        document.getElementById('location-button').innerText = '📍 Desactivar ubicación';
+      }
+    }
+
+    // Función para volver al centro y zoom inicial de la parcela
+    function resetZoom() {
+      if (cotoBounds) {
+        map.fitBounds(cotoBounds);  // Vuelve a los límites de la parcela
+      } else {
+        alert("No se pudo encontrar los límites de la parcela.");
+      }
+    }
+  </script>
+
+  <!-- Botón para activar/desactivar localización -->
+  <button id="location-button" class="locate-button" onclick="toggleLocation()">📍 Activar ubicación</button>
+
+  <!-- Botón para restablecer el zoom a la parcela -->
+  <button class="reset-button" onclick="resetZoom()">🔄 Volver al zoom de la parcela</button>
+
+</body>
+</html>
